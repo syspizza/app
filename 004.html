@@ -278,7 +278,21 @@ function abrirCadastro(numero,cliente){
  entradas.cep.addEventListener('blur',buscarCep);
  const msg=document.createElement('p');msg.setAttribute('aria-live','polite');w.append(msg);
  const btn=document.createElement('button');btn.className='order-primary';btn.style.marginTop='12px';btn.textContent=modoTestePedido?'Continuar pedido de teste':cliente?'Confirmar dados e continuar':'Cadastrar e continuar';
- btn.onclick=async()=>{const dados={whatsapp:numero};for(const [id,inp] of Object.entries(entradas))dados[id]=inp.value.trim();if(!dados.nome||!dados.endereco||!dados.numero||!dados.bairro||!/^\d{5}-?\d{3}$/.test(dados.cep)){msg.textContent='Preencha nome, CEP válido, endereço, número e bairro.';return}btn.disabled=true;msg.textContent='Preparando pedido...';try{if(!modoTestePedido&&!tokenSMS)throw Error('Confirme o SMS antes de continuar');if(!modoTestePedido&&!cliente)await chamarClientes('salvarCliente',{cliente:dados,token:tokenSMS});clienteAtual=dados;confirmarEnvio()}catch(e){msg.textContent='Não foi possível continuar: '+e.message}finally{btn.disabled=false}};w.append(btn);abrirEtapa('Dados para entrega',w)
+ btn.onclick=async()=>{const dados={whatsapp:numero};for(const [id,inp] of Object.entries(entradas))dados[id]=inp.value.trim();if(!dados.nome||!dados.endereco||!dados.numero||!dados.bairro||!/^\d{5}-?\d{3}$/.test(dados.cep)){msg.textContent='Preencha nome, CEP válido, endereço, número e bairro.';return}btn.disabled=true;msg.textContent='Preparando pedido...';try{if(!modoTestePedido&&!tokenSMS)throw Error('Confirme o SMS antes de continuar');if(!modoTestePedido&&!cliente)await chamarClientes('salvarCliente',{cliente:dados,token:tokenSMS});clienteAtual=dados;entregaCalculada=null;await calcularEntregaAntesDoPedido()}catch(e){msg.textContent='Não foi possível continuar: '+e.message}finally{btn.disabled=false}};w.append(btn);abrirEtapa('Dados para entrega',w)
+}
+async function calcularEntregaAntesDoPedido(){
+ const w=document.createElement('div');const aviso=document.createElement('p');aviso.textContent='Calculando a distância do trajeto de carro e a taxa de entrega...';w.append(aviso);abrirEtapa('Calculando entrega',w);
+ try{
+  const dados={whatsapp:clienteAtual.whatsapp,cliente:clienteAtual};
+  if(modoTestePedido){if(!admToken)throw Error('Entre no ADM para calcular o pedido de teste');dados.adminToken=admToken}
+  else dados.token=tokenSMS;
+  const r=await chamarClientes('calcularEntrega',dados);
+  entregaCalculada=r;
+  if(!r.atende){aviso.textContent='Infelizmente não realizamos entregas para este endereço. Distância de carro: '+r.km.toFixed(2)+' km. Limite: '+r.limite+' km.';return}
+  aviso.textContent='Distância de carro: '+r.km.toFixed(2)+' km. Taxa de entrega: '+reais(r.taxa)+'.';
+  const b=document.createElement('button');b.className='order-primary';b.textContent='Continuar e conferir pedido';b.onclick=confirmarEnvio;w.append(b);
+ }catch(e){aviso.textContent='Não foi possível calcular a entrega: '+e.message+'. Confira o endereço ou tente novamente.';
+  const b=document.createElement('button');b.className='order-primary';b.textContent='Tentar novamente';b.onclick=calcularEntregaAntesDoPedido;w.append(b)}
 }
 function confirmarEnvio(){const w=document.createElement('div');const p=document.createElement('p');p.textContent=modoTestePedido?'MODO TESTE: o pedido será preparado para conferência, sem cadastrar cliente nem enviar SMS.':'Cadastro confirmado. O pedido será aberto no WhatsApp da pizzaria para você conferir e enviar.';w.append(p);const btn=document.createElement('button');btn.className='order-primary';btn.textContent=modoTestePedido?'Visualizar pedido de teste no WhatsApp ↗':'Enviar pedido pelo WhatsApp ↗';btn.onclick=enviarPedido;w.append(btn);abrirEtapa('Finalizar pedido',w)}
 function formatarItemWhatsApp(x){
@@ -307,7 +321,7 @@ function formatarItemWhatsApp(x){
  return linhas.join('\n')+'\n------------------------------------------\n';
 }
 function enviarPedido(){
- if(!clienteAtual||!carrinho.length)return;
+ if(!clienteAtual||!carrinho.length||!entregaCalculada?.atende)return;
  const c=clienteAtual;
  const prioridade=x=>{
   const cat=grupo(x.cat);
@@ -328,7 +342,10 @@ function enviarPedido(){
  itens.forEach(x=>{msg+=formatarItemWhatsApp(x)});
  if(observacaoPedido)msg+='\n*Observações:* '+observacaoPedido+'\n';
  msg+='\n*Subtotal:* '+reais(carrinho.reduce((a,x)=>a+(Number(x.quantidade)||1)*((Number(x.unitario)||0)+(Number(x.borda?.preco)||0)),0))+
-  '\n*Taxa de entrega:* a confirmar pela pizzaria\nAguardando confirmação do pedido.';
+  '\n*Distância de carro:* '+entregaCalculada.km.toFixed(2)+' km'+
+  '\n*Taxa de entrega:* '+reais(entregaCalculada.taxa)+
+  '\n*Total:* '+reais(carrinho.reduce((a,x)=>a+(Number(x.quantidade)||1)*((Number(x.unitario)||0)+(Number(x.borda?.preco)||0)),0)+entregaCalculada.taxa)+
+  '\nAguardando confirmação do pedido.';
  window.open('https://wa.me/'+(configPizzaria?.whatsappPedidos||CONFIG_PEDIDOS.whatsappPizzaria)+'?text='+encodeURIComponent(msg),'_blank','noopener,noreferrer');
 }
 const URL_CLIENTES=URL_GOOGLE_SCRIPT; // Mesma implantacao: SMS, clientes e cardapio
@@ -339,7 +356,7 @@ atualizarCarrinho=function(){originalAtualizarCarrinho();const texto=[...documen
 
 // ===== Administracao da pizzaria 004 — v1.02 =====
 const ADM_DIAS=['Segunda','Terça','Quarta','Quinta','Sexta','Sábado','Domingo'];
-let admToken='';let configPizzaria=null;
+let admToken='';let configPizzaria=null;let entregaCalculada=null;
 function fecharAdmin(){document.getElementById('adm-backdrop').hidden=true}
 function abrirAdmin(){document.getElementById('adm-backdrop').hidden=false;mostrarLoginAdmin()}
 function mostrarLoginAdmin(){
