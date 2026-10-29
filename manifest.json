@@ -1,0 +1,26 @@
+{
+  "name": "App Delivery",
+  "short_name": "App Delivery",
+  "description": "Pedidos online da pizzaria",
+  "lang": "pt-BR",
+  "start_url": "./004.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#df2727",
+  "icons": [
+    {
+      "src": "./app-delivery-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./app-delivery-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "id": "./004.html"
+}
