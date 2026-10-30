@@ -229,8 +229,16 @@ async function iniciarFinalizacao(){
  if(salvo?.whatsapp)f.value=salvo.whatsapp.replace(/^55/,'');
  const status=document.createElement('p');status.setAttribute('aria-live','polite');w.append(status);
  const b=document.createElement('button');b.className='order-primary';b.textContent='Continuar';
- b.onclick=()=>{const n=normalizarTelefone(f.value);if(!/^55\d{11}$/.test(n)){status.textContent='Informe um celular válido com DDD.';return}
- clienteAtual=lerClienteLocal(n);abrirCadastro(n,clienteAtual,false)};
+ b.onclick=async()=>{const n=normalizarTelefone(f.value);if(!/^55\d{11}$/.test(n)){status.textContent='Informe um celular válido com DDD.';return}
+ b.disabled=true;b.style.backgroundColor='#858585';b.style.cursor='not-allowed';b.textContent='Consultando cadastro...';status.textContent='Procurando WhatsApp na planilha...';
+ try{
+  const r=await fetch(URL_CLIENTES+'?acao=consultarCliente&whatsapp='+encodeURIComponent(n),{redirect:'follow'});
+  if(!r.ok)throw Error('Falha ao consultar cadastro');
+  const j=await r.json();if(j.erro)throw Error(j.erro);
+  if(j.encontrado){confirmarEnderecoResumido(n,j.enderecoMascarado)}
+  else{clienteAtual=null;abrirCadastro(n,null,false)}
+ }catch(e){status.textContent='Não foi possível consultar a planilha: '+e.message+'. Tente novamente.'}
+ finally{b.disabled=false;b.style.backgroundColor='';b.style.cursor='';b.textContent='Continuar'}};
  w.append(b);abrirEtapa('Identificar WhatsApp',w);
 }
 function normalizarTelefone(v){let n=String(v||'').replace(/\D/g,'');if(n.length===11)n='55'+n;return n}
@@ -240,15 +248,29 @@ function abrirCadastroTeste(numero){
  clienteAtual=null;
  abrirCadastro(numero,null);
 }
-function confirmarEnderecoResumido(numero,cliente){
+function confirmarEnderecoResumido(numero,resumo){
  const w=document.createElement('div');
- const p=document.createElement('p');p.textContent='Encontramos seu cadastro. Confirme o endereço para a entrega:';w.append(p);
+ const p=document.createElement('p');p.textContent='Encontramos seu cadastro. Você reconhece este endereço de entrega?';w.append(p);
  const endereco=document.createElement('div');endereco.style.cssText='padding:15px;border:1px solid #e5e5e5;border-radius:12px;line-height:1.7;background:#fafafa;white-space:pre-line';
- endereco.textContent=[cliente.nome,[cliente.tipo,cliente.endereco,cliente.numero].filter(Boolean).join(' '),[cliente.complemento,cliente.bairro].filter(Boolean).join(' — '),[cliente.cidade,cliente.estado].filter(Boolean).join(' / '),'CEP: '+(cliente.cep||'')].filter(Boolean).join('\n');w.append(endereco);
+ endereco.textContent=[resumo?.logradouro+', nº '+(resumo?.numero||'###'),resumo?.bairro,resumo?.cidade,'CEP: '+(resumo?.cep||'########')].filter(Boolean).join('\n');w.append(endereco);
  const msg=document.createElement('p');msg.setAttribute('aria-live','polite');w.append(msg);
- const btn=document.createElement('button');btn.className='order-primary';btn.textContent='Confirmar endereço';btn.style.marginTop='14px';
- btn.onclick=async()=>{btn.disabled=true;msg.textContent='Conferindo taxa de entrega...';try{clienteAtual=cliente;await calcularEntregaAntesDoPedido()}catch(e){msg.textContent=e.message}finally{btn.disabled=false}};w.append(btn);
- const alterar=document.createElement('button');alterar.type='button';alterar.className='order-back';alterar.style.cssText='margin-top:12px;width:100%';alterar.textContent='Modificar endereço';alterar.onclick=()=>abrirCadastro(numero,cliente,true);w.append(alterar);
+ const btn=document.createElement('button');btn.className='order-primary';btn.textContent='Sim, confirmar endereço';btn.style.marginTop='14px';
+ btn.onclick=async()=>{
+  btn.disabled=true;alterar.disabled=true;btn.style.backgroundColor='#858585';btn.textContent='Confirmando endereço...';msg.textContent='Consultando os dados da entrega...';
+  try{
+   const r=await chamarClientesComLimite('confirmarEnderecoExistente004',{whatsapp:numero});
+   clienteAtual=r.cliente;entregaCalculada=r;salvarClienteLocal(clienteAtual);
+   if(!r.atende){msg.textContent='A disponibilidade da entrega será confirmada pela pizzaria.';return}
+   confirmarEnvio();
+  }catch(e){msg.textContent='Não foi possível confirmar: '+e.message}
+  finally{btn.disabled=false;alterar.disabled=false;btn.style.backgroundColor='';btn.textContent='Sim, confirmar endereço'}
+ };w.append(btn);
+ const alterar=document.createElement('button');alterar.type='button';alterar.className='order-back';alterar.style.cssText='margin-top:12px;width:100%';alterar.textContent='Modificar endereço';
+ alterar.onclick=async()=>{
+  alterar.disabled=true;btn.disabled=true;alterar.textContent='Preparando alteração...';
+  try{const r=await chamarClientesComLimite('confirmarEnderecoExistente004',{whatsapp:numero});clienteAtual=r.cliente;abrirCadastro(numero,r.cliente,true)}
+  catch(e){msg.textContent='Não foi possível carregar o cadastro: '+e.message;alterar.disabled=false;btn.disabled=false;alterar.textContent='Modificar endereço'}
+ };w.append(alterar);
  abrirEtapa('Confirme seu endereço',w);
 }
 // v1.29: modal nao interativo, impede toques repetidos enquanto o servidor responde.
@@ -505,7 +527,7 @@ function atualizarStatusPizzaria(){const el=document.getElementById('status-pizz
 async function carregarConfigPizzaria(){try{const r=await fetch(URL_GOOGLE_SCRIPT);const j=await r.json();if(j.config){configPizzaria=j.config;atualizarStatusPizzaria()}}catch(e){console.warn('Status indisponível',e)}}
 carregarConfigPizzaria();setInterval(carregarConfigPizzaria,60000);
 
-// SysPizza Digital v1.42 - instalacao PWA (sem alterar o fluxo de pedidos).
+// SysPizza Digital v1.43 - identificacao por endereco mascarado; instalacao PWA (sem alterar o fluxo de pedidos).
 let eventoInstalacaoApp=null;
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();eventoInstalacaoApp=e;});
 window.addEventListener('appinstalled',()=>{eventoInstalacaoApp=null;fecharInstalacaoApp();});
