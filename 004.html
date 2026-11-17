@@ -109,7 +109,7 @@ async function carregarProdutos(){
  if(!URL_GOOGLE_SCRIPT){status.className='menu-note';status.textContent='Para mostrar todos os produtos da aba 004, falta conectar a planilha Google Sheets. Nenhum produto foi inventado nesta versão.';return;}
  status.textContent='Carregando produtos da pizzaria...';
  try{
-  const r=await fetch(URL_GOOGLE_SCRIPT,{redirect:'follow'});
+  const r=await fetch(URL_GOOGLE_SCRIPT+'?unidade=004',{redirect:'follow'});
   if(!r.ok)throw Error('HTTP '+r.status);
   const data=await r.json();const lista=Array.isArray(data)?data:data.produtos;
   bordasDisponiveis=(Array.isArray(data.bordas)?data.bordas:[]).map(b=>({nome:String(b.nome||b.borda||'').trim(),grande:dinheiro(b.grande),broto:dinheiro(b.broto)})).filter(b=>b.nome);
@@ -208,13 +208,13 @@ const CHAVE_CLIENTE_LOCAL='syspizza_004_cliente_local_v136';
 function lerClienteLocal(numero){try{const c=JSON.parse(localStorage.getItem(CHAVE_CLIENTE_LOCAL)||'null');return c&&c.whatsapp===numero?c:null}catch(_){return null}}
 function salvarClienteLocal(c){try{localStorage.setItem(CHAVE_CLIENTE_LOCAL,JSON.stringify(c))}catch(_){}}
 async function chamarClientes(acao,dados={}){
- const r=await fetch(URL_CLIENTES,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({acao,...dados}),redirect:'follow'});
+ const r=await fetch(URL_CLIENTES,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({acao,unidade:'004',...dados}),redirect:'follow'});
  if(!r.ok)throw Error('Falha HTTP '+r.status);
  const j=await r.json();if(!j.ok)throw Error(j.erro||'Não foi possível concluir a operação');return j;
 }
 async function chamarClientesComLimite(acao,dados){
  const controle=new AbortController();const t=setTimeout(()=>controle.abort(),35000);
- try{const r=await fetch(URL_CLIENTES,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({acao,...dados}),redirect:'follow',signal:controle.signal});
+ try{const r=await fetch(URL_CLIENTES,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({acao,unidade:'004',...dados}),redirect:'follow',signal:controle.signal});
  if(!r.ok)throw Error('Falha HTTP '+r.status);const j=await r.json();if(!j.ok)throw Error(j.erro||'Falha na operação');return j;
  }catch(e){if(e.name==='AbortError')throw Error('A consulta demorou mais de 35 segundos. Tente novamente.');throw e}
  finally{clearTimeout(t)}
@@ -234,7 +234,7 @@ async function iniciarFinalizacao(){
  b.onclick=async()=>{const n=normalizarTelefone(f.value);if(!/^55\d{11}$/.test(n)){status.textContent='Informe um celular válido com DDD.';return}
  b.disabled=true;b.style.backgroundColor='#858585';b.style.cursor='not-allowed';b.textContent='Consultando cadastro...';status.textContent='Procurando WhatsApp na planilha...';
  try{
-  const r=await fetch(URL_CLIENTES+'?acao=consultarCliente&whatsapp='+encodeURIComponent(n),{redirect:'follow'});
+  const r=await fetch(URL_CLIENTES+'?unidade=004&acao=consultarCliente&whatsapp='+encodeURIComponent(n),{redirect:'follow'});
   if(!r.ok)throw Error('Falha ao consultar cadastro');
   const j=await r.json();if(j.erro)throw Error(j.erro);
   if(j.encontrado){confirmarEnderecoResumido(n,j.enderecoMascarado)}
@@ -336,7 +336,7 @@ function abrirCadastro(numero,cliente,editar=false){
         const kmTexto=String(consulta.cliente.distanciaKm??'').trim();
         const taxaTexto=String(consulta.cliente.taxaEntrega??'').trim();
         const taxaNumero=Number(taxaTexto.replace(/\./g,'').replace(',','.'));
-        entregaCalculada={ok:true,atende:true,km:kmTexto?Number(kmTexto.replace(',','.')):null,
+        entregaCalculada={ok:true,atende:true,modoTaxa:configPizzaria?.modoTaxa,km:kmTexto?Number(kmTexto.replace(',','.')):null,
           taxa:Number.isFinite(taxaNumero)?taxaNumero:0,provisoria:!kmTexto};
         msg.textContent='Cadastro localizado. Continuando seu pedido...';
         confirmarEnvio();return;
@@ -406,7 +406,7 @@ async function calcularEntregaAntesDoPedido(){
   if(!modoTestePedido && !r.clienteSalvo)throw Error('Cadastro nao confirmado na planilha');
   if(!modoTestePedido)salvarClienteLocal(clienteAtual);
   if(!r.atende){aviso.textContent='A disponibilidade da entrega será confirmada pela pizzaria.';return}
-  aviso.textContent=r.provisoria?'Taxa mínima provisória: '+reais(r.taxa)+'. O valor e a disponibilidade da entrega serão confirmados pela pizzaria.':'Distância: '+Number(r.km).toFixed(2)+' km. Taxa de entrega: '+reais(r.taxa)+'.';
+  aviso.textContent=r.modoTaxa==='fixa'?'Taxa fixa de entrega: '+reais(r.taxa)+'.':r.provisoria?'Taxa mínima provisória: '+reais(r.taxa)+'. O valor e a disponibilidade da entrega serão confirmados pela pizzaria.':'Distância: '+Number(r.km).toFixed(2)+' km. Taxa de entrega: '+reais(r.taxa)+'.';
   const b=document.createElement('button');b.className='order-primary';b.textContent='Continuar e conferir pedido';b.onclick=confirmarEnvio;w.append(b);
  }catch(e){aviso.textContent='Não foi possível calcular a entrega: '+e.message+'. Confira o endereço ou tente novamente.';
   const b=document.createElement('button');b.className='order-primary';b.textContent='Tentar novamente';b.onclick=calcularEntregaAntesDoPedido;w.append(b)}
@@ -463,7 +463,7 @@ function enviarPedido(){
  itens.forEach(x=>{msg+=formatarItemWhatsApp(x)});
  if(observacaoPedido)msg+='\n*Observações:* '+observacaoPedido+'\n';
  msg+='\n*Subtotal:* '+reais(carrinho.reduce((a,x)=>a+(Number(x.quantidade)||1)*((Number(x.unitario)||0)+(Number(x.borda?.preco)||0)),0))+
-  '\n*Distância:* '+(entregaCalculada.provisoria?'Não calculada':Number(entregaCalculada.km).toFixed(2)+' km')+
+  '\n*Distância:* '+(entregaCalculada.modoTaxa==='fixa'?'Taxa fixa (sem calculo de distancia)':entregaCalculada.provisoria?'Não calculada':Number(entregaCalculada.km).toFixed(2)+' km')+
   '\n*Taxa de entrega:* '+reais(entregaCalculada.taxa)+(entregaCalculada.provisoria?' (Sujeita a alteração)\n*ATENÇÃO:* Confirmar taxa de entrega com o cliente':'')+
   '\n*Total:* '+reais(carrinho.reduce((a,x)=>a+(Number(x.quantidade)||1)*((Number(x.unitario)||0)+(Number(x.borda?.preco)||0)),0)+entregaCalculada.taxa)+
   '\nAguardando confirmação do pedido.';
@@ -493,11 +493,17 @@ function montarConfigAdmin(config){
  const campo=(texto,valor)=>{const l=document.createElement('label');l.className='adm-field';l.textContent=texto;const i=document.createElement('input');i.className='adm-input';i.value=valor??'';c.append(l,i);return i};
  const endereco=campo('Endereço da pizzaria',config.endereco),cep=campo('CEP',config.cep),km=campo('Distância máxima de entrega (km)',config.distanciaMaxima);
  const whatsappAdm=campo('WhatsApp para receber os pedidos (DDD + número)',config.whatsappPedidos||'');whatsappAdm.type='tel';whatsappAdm.inputMode='numeric';whatsappAdm.placeholder='11961845037';km.type='number';km.min='0';km.max='100';km.step='0.5';
+ const modoTaxa=campo('Modo de taxa (fixa ou distancia)',config.modoTaxa||'distancia');
+ const escolha=document.createElement('select');escolha.className='adm-input';
+ for(const [valor,rotulo] of [['distancia','Por distancia (4 faixas)'],['fixa','Taxa fixa']]){const o=document.createElement('option');o.value=valor;o.textContent=rotulo;escolha.append(o)}
+ escolha.value=config.modoTaxa||'distancia';modoTaxa.replaceWith(escolha);
+ const taxaFixa=campo('Valor da taxa fixa (R$)',config.taxaFixa??0);taxaFixa.type='number';taxaFixa.min='0';taxaFixa.step='0.01';
+ const avisoTaxas=document.createElement('p');avisoTaxas.className='adm-hint';avisoTaxas.textContent='No modo por distancia, as 4 faixas ficam em AT2:BE2 da planilha. Limite em BF2. Modo em BJ2 e taxa fixa em BK2.';c.append(avisoTaxas);
  const horas=[];
  ADM_DIAS.forEach((dia,n)=>{const bloco=document.createElement('div');bloco.className='adm-day';const t=document.createElement('strong');t.textContent=dia;const grid=document.createElement('div');grid.className='adm-time';const ini=document.createElement('input'),fim=document.createElement('input');ini.type=fim.type='time';ini.className=fim.className='adm-input';ini.value=config.dias?.[n]?.inicio||'';fim.value=config.dias?.[n]?.fim||'';grid.append(ini,fim);bloco.append(t,grid);c.append(bloco);horas.push({inicio:ini,fim})});
  const dica=document.createElement('p');dica.className='adm-hint';dica.textContent='Horários: abertura à esquerda e fechamento à direita. Para não funcionar em um dia, deixe ambos vazios. Horários que passam da meia-noite são aceitos.';c.append(dica);
  const msg=document.createElement('p');msg.className='adm-msg';c.append(msg);
- const btn=document.createElement('button');btn.className='adm-primary';btn.textContent='Salvar na planilha';btn.onclick=async()=>{btn.disabled=true;msg.textContent='Salvando...';try{const tel=whatsappAdm.value.replace(/\D/g,'');if(!/^(?:55)?\d{10,11}$/.test(tel))throw Error('Informe o WhatsApp da pizzaria com DDD (10 ou 11 dígitos).');const r=await chamarClientes('salvarConfigAdmin',{adminToken:admToken,config:{endereco:endereco.value,cep:cep.value,distanciaMaxima:km.value,whatsappPedidos:tel,dias:horas.map(x=>({inicio:x.inicio.value,fim:x.fim.value}))}});configPizzaria=r.config;atualizarStatusPizzaria();msg.style.color='#166534';msg.textContent='Configurações salvas com sucesso!'}catch(e){msg.style.color='#a22';msg.textContent=e.message}finally{btn.disabled=false}};c.append(btn);
+ const btn=document.createElement('button');btn.className='adm-primary';btn.textContent='Salvar na planilha';btn.onclick=async()=>{btn.disabled=true;msg.textContent='Salvando...';try{const tel=whatsappAdm.value.replace(/\D/g,'');if(!/^(?:55)?\d{10,11}$/.test(tel))throw Error('Informe o WhatsApp da pizzaria com DDD (10 ou 11 dígitos).');const r=await chamarClientes('salvarConfigAdmin',{adminToken:admToken,config:{endereco:endereco.value,cep:cep.value,distanciaMaxima:km.value,whatsappPedidos:tel,modoTaxa:escolha.value,taxaFixa:taxaFixa.value,dias:horas.map(x=>({inicio:x.inicio.value,fim:x.fim.value}))}});configPizzaria=r.config;atualizarStatusPizzaria();msg.style.color='#166534';msg.textContent='Configurações salvas com sucesso!'}catch(e){msg.style.color='#a22';msg.textContent=e.message}finally{btn.disabled=false}};c.append(btn);
  const divisor=document.createElement('hr');divisor.style.cssText='margin:24px 0 14px;border:0;border-top:1px solid #ddd';c.append(divisor);
  const tituloSenha=document.createElement('h3');tituloSenha.textContent='🔐 Alterar senha administrativa';c.append(tituloSenha);
  const senhaAtual=document.createElement('input'),senhaNova=document.createElement('input'),senhaConfirma=document.createElement('input');
@@ -530,7 +536,7 @@ function montarConfigAdmin(config){
  c.append(botSenha);
 }
 function atualizarStatusPizzaria(){const el=document.getElementById('status-pizzaria');if(!el)return;const st=configPizzaria?.status;el.textContent=st==='ABERTO'?'● Aberto':st==='FECHADO'?'● Fechado':'● Horário indisponível';el.style.color=st==='ABERTO'?'#15803d':'#b91c1c'}
-async function carregarConfigPizzaria(){try{const r=await fetch(URL_GOOGLE_SCRIPT);const j=await r.json();if(j.config){configPizzaria=j.config;atualizarStatusPizzaria()}}catch(e){console.warn('Status indisponível',e)}}
+async function carregarConfigPizzaria(){try{const r=await fetch(URL_GOOGLE_SCRIPT+'?unidade=004');const j=await r.json();if(j.config){configPizzaria=j.config;atualizarStatusPizzaria()}}catch(e){console.warn('Status indisponível',e)}}
 carregarConfigPizzaria();setInterval(carregarConfigPizzaria,60000);
 
 // SysPizza Digital v1.44 - identificacao por endereco mascarado; instalacao PWA (sem alterar o fluxo de pedidos).
