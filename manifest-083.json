@@ -1,0 +1,22 @@
+{
+  "name": "Di Vitto Pizzaria — SysPizza Digital",
+  "short_name": "Di Vitto",
+  "id": "./083.html",
+  "start_url": "./083.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#dc2626",
+  "icons": [
+    {
+      "src": "./app-delivery-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "./app-delivery-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
