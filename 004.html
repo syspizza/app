@@ -36,7 +36,7 @@
 .menu-product .choose-product{flex:0 0 auto;align-self:center;margin-top:0;white-space:nowrap;padding:10px 11px}
 @media(max-width:380px){.menu-product{gap:7px}.menu-product .choose-product{padding:9px 8px;font-size:11px}}
 </style>
-<meta name="sys-pizza-version" content="1.46">
+<meta name="sys-pizza-version" content="1.47">
 <style id="sys-pizza-v146-publicidade">
 /* Rodapé publicitário independente do carrinho; botão de finalizar pedido permanece no fluxo */
 .bottom.bottom-publicidade{gap:10px;padding:10px 12px;min-height:76px;box-shadow:0 -4px 20px #00000010}
@@ -498,6 +498,20 @@ function mostrarLoginAdmin(){
 }
 function montarConfigAdmin(config){
  const c=document.getElementById('adm-content');c.replaceChildren();
+ const sec=document.createElement('section');sec.style.cssText='border:1px solid #ddd;border-radius:14px;padding:14px;margin-bottom:20px';c.append(sec);
+ const h=document.createElement('h3');h.textContent='🍕 Gerenciar cardápio e bordas';sec.append(h);
+ const hint=document.createElement('p');hint.className='adm-hint';hint.textContent='Cadastre, edite ou exclua produtos e bordas. As mudanças são gravadas na aba 004.';sec.append(hint);
+ const tipo=document.createElement('select');tipo.className='adm-input';[['produto','Produtos'],['borda','Bordas']].forEach(([v,t])=>tipo.add(new Option(t,v)));sec.append(tipo);
+ const categoria=document.createElement('select');categoria.className='adm-input';[['PIZZAS','Pizzas'],['ESFIRRAS','Esfirras'],['BEBIDAS','Bebidas']].forEach(([v,t])=>categoria.add(new Option(t,v)));sec.append(categoria);
+ const lista=document.createElement('div');sec.append(lista);
+ const formulario=document.createElement('div');formulario.style.cssText='margin-top:12px;border-top:1px solid #ddd;padding-top:12px';sec.append(formulario);
+ const estado=document.createElement('p');estado.className='adm-msg';sec.append(estado);
+ let itens={produtos:[],bordas:[]},editando=0;
+ const entrada=(texto,valor='',tipoCampo='text')=>{const l=document.createElement('label');l.className='adm-field';l.textContent=texto;const i=document.createElement('input');i.className='adm-input';i.type=tipoCampo;i.value=valor??'';l.append(i);formulario.append(l);return i};
+ async function atualizarLista(){estado.textContent='Carregando cardápio...';try{itens=await chamarClientes('listarCardapioAdmin',{adminToken:admToken});estado.textContent='';renderLista()}catch(e){estado.textContent=e.message}}
+ function renderLista(){lista.replaceChildren();categoria.style.display=tipo.value==='produto'?'block':'none';const dados=tipo.value==='borda'?itens.bordas:itens.produtos.filter(x=>String(x.categoria).toUpperCase()===categoria.value);dados.forEach(item=>{const r=document.createElement('div');r.style.cssText='display:flex;align-items:center;gap:8px;justify-content:space-between;border-bottom:1px solid #eee;padding:9px 0';const texto=document.createElement('span');texto.style.cssText='flex:1;min-width:0;overflow-wrap:anywhere;font-size:14px';texto.textContent=(item.descricao||item.nome)+' — R$ '+Number(item.grande||0).toFixed(2).replace('.',',')+(tipo.value==='borda'||categoria.value==='PIZZAS'?' / R$ '+Number(item.broto||0).toFixed(2).replace('.',','):'');const editar=document.createElement('button');editar.textContent='Editar';editar.type='button';editar.onclick=()=>formItem(item);const excluir=document.createElement('button');excluir.textContent='Excluir';excluir.type='button';excluir.onclick=async()=>{if(!confirm('Excluir '+(item.descricao||item.nome)+' do cardápio?'))return;excluir.disabled=true;try{await chamarClientes('excluirItemAdmin',{adminToken:admToken,tipo:tipo.value,linha:item.linha});await atualizarLista();formItem()}catch(e){estado.textContent=e.message}finally{excluir.disabled=false}};r.append(texto,editar,excluir);lista.append(r)});if(!dados.length){const vazio=document.createElement('p');vazio.className='adm-hint';vazio.textContent='Nenhum item cadastrado neste grupo.';lista.append(vazio)}}
+ function formItem(item={}){editando=item.linha||0;formulario.replaceChildren();const cab=document.createElement('h4');cab.textContent=(editando?'Editar ':'Cadastrar ')+(tipo.value==='borda'?'borda':'produto');formulario.append(cab);const nome=entrada(tipo.value==='borda'?'Nome da borda':'Nome do produto',item.descricao||item.nome||'');const ing=tipo.value==='produto'?entrada(categoria.value==='PIZZAS'?'Ingredientes':'Descrição / apresentação',item.complemento||''):null;const cod=tipo.value==='produto'?entrada('Código (deixe vazio para gerar automaticamente)',item.codigo||''):null;const grande=entrada(tipo.value==='borda'?'Preço da borda grande (R$)':categoria.value==='PIZZAS'?'Preço pizza grande (R$)':'Preço unitário (R$)',item.grande??'0','number');grande.step='0.01';grande.min='0';const broto=(tipo.value==='borda'||categoria.value==='PIZZAS')?entrada('Preço broto (R$)',item.broto??'0','number'):null;if(broto){broto.step='0.01';broto.min='0'}const salvar=document.createElement('button');salvar.className='adm-primary';salvar.type='button';salvar.textContent=editando?'Salvar alterações':'Cadastrar item';salvar.onclick=async()=>{salvar.disabled=true;estado.textContent='Salvando...';try{const itemNovo=tipo.value==='borda'?{nome:nome.value,grande:grande.value,broto:broto.value}:{codigo:cod.value,descricao:nome.value,complemento:ing.value,categoria:categoria.value,grande:grande.value,broto:broto?.value||0};await chamarClientes('salvarItemAdmin',{adminToken:admToken,tipo:tipo.value,linha:editando,item:itemNovo});await atualizarLista();formItem();estado.style.color='#166534';estado.textContent='Item salvo! Atualize o cardápio para visualizar os novos preços.'}catch(e){estado.style.color='#a22';estado.textContent=e.message}finally{salvar.disabled=false}};formulario.append(salvar)}
+ tipo.onchange=()=>{renderLista();formItem()};categoria.onchange=()=>{renderLista();formItem()};formItem();atualizarLista();
  const titulo=document.createElement('p');titulo.className='adm-hint';titulo.textContent='Altere os dados abaixo. Os valores serão gravados na linha 2 da aba 004.';c.append(titulo);
  const campo=(texto,valor)=>{const l=document.createElement('label');l.className='adm-field';l.textContent=texto;const i=document.createElement('input');i.className='adm-input';i.value=valor??'';c.append(l,i);return i};
  const endereco=campo('Endereço da pizzaria',config.endereco),cep=campo('CEP',config.cep),km=campo('Distância máxima de entrega (km)',config.distanciaMaxima);
@@ -507,12 +521,26 @@ function montarConfigAdmin(config){
  for(const [valor,rotulo] of [['distancia','Por distancia (4 faixas)'],['fixa','Taxa fixa']]){const o=document.createElement('option');o.value=valor;o.textContent=rotulo;escolha.append(o)}
  escolha.value=config.modoTaxa||'distancia';modoTaxa.replaceWith(escolha);
  const taxaFixa=campo('Valor da taxa fixa (R$)',config.taxaFixa??0);taxaFixa.type='number';taxaFixa.min='0';taxaFixa.step='0.01';
- const avisoTaxas=document.createElement('p');avisoTaxas.className='adm-hint';avisoTaxas.textContent='No modo por distancia, as 4 faixas ficam em AT2:BE2 da planilha. Limite em BF2. Modo em BJ2 e taxa fixa em BK2.';c.append(avisoTaxas);
+ const tituloFaixas=document.createElement('h3');tituloFaixas.textContent='Taxas por distância — quatro faixas';c.append(tituloFaixas);
+ const faixasInputs=[];
+ const padrao=[{inicio:0,fim:1,valor:1},{inicio:2,fim:3,valor:2},{inicio:4,fim:5,valor:3},{inicio:6,fim:8,valor:4}];
+ (config.faixasEntrega?.length===4?config.faixasEntrega:padrao).forEach((f,i)=>{
+   const grupo=document.createElement('div');grupo.className='adm-day';
+   const nome=document.createElement('strong');nome.textContent='Faixa '+(i+1);grupo.append(nome);
+   const grade=document.createElement('div');grade.style.cssText='display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px';
+   const campos=[];
+   [['KM inicial',f.inicio],['KM final',f.fim],['Taxa (R$)',f.valor]].forEach(([rotulo,valor])=>{
+     const l=document.createElement('label');l.style.cssText='font-size:12px;display:flex;flex-direction:column;gap:4px';l.textContent=rotulo;
+     const input=document.createElement('input');input.type='number';input.min='0';input.step='0.01';input.className='adm-input';input.value=valor??0;l.append(input);grade.append(l);campos.push(input);
+   });grupo.append(grade);c.append(grupo);faixasInputs.push(campos);
+ });
+ const avisoTaxas=document.createElement('p');avisoTaxas.className='adm-hint';avisoTaxas.textContent='As faixas são salvas nas colunas AT:BE. O limite máximo deve corresponder ao KM final da quarta faixa (BF2).';c.append(avisoTaxas);
+
  const horas=[];
  ADM_DIAS.forEach((dia,n)=>{const bloco=document.createElement('div');bloco.className='adm-day';const t=document.createElement('strong');t.textContent=dia;const grid=document.createElement('div');grid.className='adm-time';const ini=document.createElement('input'),fim=document.createElement('input');ini.type=fim.type='time';ini.className=fim.className='adm-input';ini.value=config.dias?.[n]?.inicio||'';fim.value=config.dias?.[n]?.fim||'';grid.append(ini,fim);bloco.append(t,grid);c.append(bloco);horas.push({inicio:ini,fim})});
  const dica=document.createElement('p');dica.className='adm-hint';dica.textContent='Horários: abertura à esquerda e fechamento à direita. Para não funcionar em um dia, deixe ambos vazios. Horários que passam da meia-noite são aceitos.';c.append(dica);
  const msg=document.createElement('p');msg.className='adm-msg';c.append(msg);
- const btn=document.createElement('button');btn.className='adm-primary';btn.textContent='Salvar na planilha';btn.onclick=async()=>{btn.disabled=true;msg.textContent='Salvando...';try{const tel=whatsappAdm.value.replace(/\D/g,'');if(!/^(?:55)?\d{10,11}$/.test(tel))throw Error('Informe o WhatsApp da pizzaria com DDD (10 ou 11 dígitos).');const r=await chamarClientes('salvarConfigAdmin',{adminToken:admToken,config:{endereco:endereco.value,cep:cep.value,distanciaMaxima:km.value,whatsappPedidos:tel,modoTaxa:escolha.value,taxaFixa:taxaFixa.value,dias:horas.map(x=>({inicio:x.inicio.value,fim:x.fim.value}))}});configPizzaria=r.config;atualizarStatusPizzaria();msg.style.color='#166534';msg.textContent='Configurações salvas com sucesso!'}catch(e){msg.style.color='#a22';msg.textContent=e.message}finally{btn.disabled=false}};c.append(btn);
+ const btn=document.createElement('button');btn.className='adm-primary';btn.textContent='Salvar na planilha';btn.onclick=async()=>{btn.disabled=true;msg.textContent='Salvando...';try{const tel=whatsappAdm.value.replace(/\D/g,'');if(!/^(?:55)?\d{10,11}$/.test(tel))throw Error('Informe o WhatsApp da pizzaria com DDD (10 ou 11 dígitos).');const r=await chamarClientes('salvarConfigAdmin',{adminToken:admToken,config:{endereco:endereco.value,cep:cep.value,distanciaMaxima:km.value,whatsappPedidos:tel,modoTaxa:escolha.value,taxaFixa:taxaFixa.value,faixasEntrega:faixasInputs.map(([inicio,fim,valor])=>({inicio:inicio.value,fim:fim.value,valor:valor.value})),dias:horas.map(x=>({inicio:x.inicio.value,fim:x.fim.value}))}});configPizzaria=r.config;atualizarStatusPizzaria();msg.style.color='#166534';msg.textContent='Configurações salvas com sucesso!'}catch(e){msg.style.color='#a22';msg.textContent=e.message}finally{btn.disabled=false}};c.append(btn);
  const divisor=document.createElement('hr');divisor.style.cssText='margin:24px 0 14px;border:0;border-top:1px solid #ddd';c.append(divisor);
  const tituloSenha=document.createElement('h3');tituloSenha.textContent='🔐 Alterar senha administrativa';c.append(tituloSenha);
  const senhaAtual=document.createElement('input'),senhaNova=document.createElement('input'),senhaConfirma=document.createElement('input');
